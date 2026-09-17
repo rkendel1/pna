@@ -21,6 +21,7 @@ import type {
 } from "@/lib/id8-types";
 
 const SEED_KEY = "id8-poc-v1";
+type Versioned<T> = T & { __version?: number };
 
 function timestamp(base: string, minutes: number) {
   return new Date(new Date(base).getTime() + minutes * 60_000).toISOString();
@@ -905,7 +906,7 @@ export async function rebuildPlanState(db: StateFirstDB, planId: string, actor: 
     const satisfied = !requirement.required || linkedEvidenceIds.length > 0;
 
     if (linkedEvidenceIds.length !== requirement.evidenceIds.length || requirement.satisfied !== satisfied) {
-      const current = await requirementsCollection.get(requirement.id);
+      const current = (await requirementsCollection.get(requirement.id)) as Versioned<Requirement> | null;
       if (current?.__version !== undefined) {
         await requirementsCollection.updateIfVersion(requirement.id, current.__version, {
           evidenceIds: linkedEvidenceIds,
@@ -1008,7 +1009,7 @@ export async function rebuildPlanState(db: StateFirstDB, planId: string, actor: 
       });
     }
   } else if (decision.status !== "made" && decision.status !== "deferred") {
-    const current = await decisionsCollection.get(decision.id);
+    const current = (await decisionsCollection.get(decision.id)) as Versioned<Decision> | null;
     if (current?.__version !== undefined) {
       const previousStatus = current.status;
       await decisionsCollection.updateIfVersion(decision.id, current.__version, {
@@ -1030,7 +1031,7 @@ export async function rebuildPlanState(db: StateFirstDB, planId: string, actor: 
     }
   }
 
-  const planCurrent = await plans.get(plan.id);
+  const planCurrent = (await plans.get(plan.id)) as Versioned<Plan> | null;
   if (planCurrent?.__version !== undefined) {
     await plans.updateIfVersion(plan.id, planCurrent.__version, {
       status: status === "ready" ? "ready" : "active",
@@ -1064,7 +1065,7 @@ export async function completeMissingRequirements(db: StateFirstDB, planId: stri
     };
     await evidenceCollection.insert(evidence, evidence.id);
 
-    const currentRequirement = await requirementsCollection.get(requirement.id);
+    const currentRequirement = (await requirementsCollection.get(requirement.id)) as Versioned<Requirement> | null;
     if (currentRequirement?.__version !== undefined) {
       await requirementsCollection.updateIfVersion(requirement.id, currentRequirement.__version, {
         satisfied: true,
@@ -1074,7 +1075,7 @@ export async function completeMissingRequirements(db: StateFirstDB, planId: stri
 
     const matchingWork = await workCollection.find({ requirementId: requirement.id });
     for (const workItem of matchingWork.filter((item) => item.status !== "completed")) {
-      const currentWork = await workCollection.get(workItem.id);
+      const currentWork = (await workCollection.get(workItem.id)) as Versioned<WorkItem> | null;
       if (currentWork?.__version !== undefined) {
         await workCollection.updateIfVersion(workItem.id, currentWork.__version, {
           status: "completed",
@@ -1120,7 +1121,7 @@ export async function makeDecision(
   const outcomesCollection = db.collection<Outcome>("outcomes");
   const attentionsCollection = db.collection<Attention>("attentions");
 
-  const decision = await decisionsCollection.get(decisionId);
+  const decision = (await decisionsCollection.get(decisionId)) as Versioned<Decision> | null;
   if (!decision) {
     throw new Error(`Decision ${decisionId} not found`);
   }

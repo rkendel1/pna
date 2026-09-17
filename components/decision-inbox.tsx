@@ -1,8 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createFeltDB } from "@feltdb/core";
-import { useCollection } from "@feltdb/core/react";
 import type {
   ActionRecord,
   AgentRecord,
@@ -27,6 +26,44 @@ const currency = new Intl.NumberFormat("en-US", {
   currency: "USD",
   maximumFractionDigits: 0,
 });
+
+type Snapshot = {
+  people: Person[];
+  organizations: Organization[];
+  interactions: Interaction[];
+  attentions: Attention[];
+  intents: Intent[];
+  plans: Plan[];
+  requirements: Requirement[];
+  work: WorkItem[];
+  evidence: Evidence[];
+  evaluations: Evaluation[];
+  decisions: Decision[];
+  outcomes: Outcome[];
+  actions: ActionRecord[];
+  artifacts: Artifact[];
+  agents: AgentRecord[];
+  events: DomainEvent[];
+};
+
+const emptySnapshot: Snapshot = {
+  people: [],
+  organizations: [],
+  interactions: [],
+  attentions: [],
+  intents: [],
+  plans: [],
+  requirements: [],
+  work: [],
+  evidence: [],
+  evaluations: [],
+  decisions: [],
+  outcomes: [],
+  actions: [],
+  artifacts: [],
+  agents: [],
+  events: [],
+};
 
 function Badge({ children, tone = "slate" }: { children: React.ReactNode; tone?: "emerald" | "amber" | "blue" | "slate" | "rose" }) {
   const styles = {
@@ -53,15 +90,17 @@ export function DecisionInbox() {
   const [refreshToken, setRefreshToken] = useState(0);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [snapshot, setSnapshot] = useState<Snapshot>(emptySnapshot);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const db = useMemo(
-    () =>
-      createFeltDB({
-        namespace: "id8-poc-client",
-        server: { url: "/api/feltdb" },
-      }),
-    [refreshToken],
-  );
+  const db = useMemo(() => {
+    const refreshGeneration = refreshToken;
+    return createFeltDB({
+      namespace: "id8-poc-client",
+      server: { url: "/api/feltdb", requestTimeoutMs: 30_000 + refreshGeneration * 0 },
+    });
+  }, [refreshToken]);
 
   const collections = useMemo(
     () => ({
@@ -85,83 +124,111 @@ export function DecisionInbox() {
     [db],
   );
 
-  const people = useCollection(collections.people, { subscribe: false });
-  const organizations = useCollection(collections.organizations, { subscribe: false });
-  const interactions = useCollection(collections.interactions, { subscribe: false });
-  const attentions = useCollection(collections.attentions, { subscribe: false });
-  const intents = useCollection(collections.intents, { subscribe: false });
-  const plans = useCollection(collections.plans, { subscribe: false });
-  const requirements = useCollection(collections.requirements, { subscribe: false });
-  const work = useCollection(collections.work, { subscribe: false });
-  const evidence = useCollection(collections.evidence, { subscribe: false });
-  const evaluations = useCollection(collections.evaluations, { subscribe: false });
-  const decisions = useCollection(collections.decisions, { subscribe: false });
-  const outcomes = useCollection(collections.outcomes, { subscribe: false });
-  const actions = useCollection(collections.actions, { subscribe: false });
-  const artifacts = useCollection(collections.artifacts, { subscribe: false });
-  const agents = useCollection(collections.agents, { subscribe: false });
-  const events = useCollection(collections.events, { subscribe: false });
+  useEffect(() => {
+    let active = true;
 
-  const loading = [
-    people.loading,
-    organizations.loading,
-    interactions.loading,
-    attentions.loading,
-    intents.loading,
-    plans.loading,
-    requirements.loading,
-    work.loading,
-    evidence.loading,
-    evaluations.loading,
-    decisions.loading,
-    outcomes.loading,
-    actions.loading,
-    artifacts.loading,
-    agents.loading,
-    events.loading,
-  ].some(Boolean);
+    async function loadSnapshot() {
+      setLoading(true);
+      setError(null);
 
-  const error =
-    people.error ||
-    organizations.error ||
-    interactions.error ||
-    attentions.error ||
-    intents.error ||
-    plans.error ||
-    requirements.error ||
-    work.error ||
-    evidence.error ||
-    evaluations.error ||
-    decisions.error ||
-    outcomes.error ||
-    actions.error ||
-    artifacts.error ||
-    agents.error ||
-    events.error;
+      try {
+        const [
+          people,
+          organizations,
+          interactions,
+          attentions,
+          intents,
+          plans,
+          requirements,
+          work,
+          evidence,
+          evaluations,
+          decisions,
+          outcomes,
+          actions,
+          artifacts,
+          agents,
+          events,
+        ] = await Promise.all([
+          collections.people.all(),
+          collections.organizations.all(),
+          collections.interactions.all(),
+          collections.attentions.all(),
+          collections.intents.all(),
+          collections.plans.all(),
+          collections.requirements.all(),
+          collections.work.all(),
+          collections.evidence.all(),
+          collections.evaluations.all(),
+          collections.decisions.all(),
+          collections.outcomes.all(),
+          collections.actions.all(),
+          collections.artifacts.all(),
+          collections.agents.all(),
+          collections.events.all(),
+        ]);
+
+        if (!active) {
+          return;
+        }
+
+        setSnapshot({
+          people,
+          organizations,
+          interactions,
+          attentions,
+          intents,
+          plans,
+          requirements,
+          work,
+          evidence,
+          evaluations,
+          decisions,
+          outcomes,
+          actions,
+          artifacts,
+          agents,
+          events,
+        });
+      } catch (loadError) {
+        if (active) {
+          setError(loadError instanceof Error ? loadError.message : String(loadError));
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void loadSnapshot();
+    return () => {
+      active = false;
+    };
+  }, [collections]);
 
   const model = useMemo(() => {
-    const peopleById = new Map(people.data.map((item) => [item.id, item]));
-    const organizationsById = new Map(organizations.data.map((item) => [item.id, item]));
-    const intentsById = new Map(intents.data.map((item) => [item.id, item]));
+    const peopleById = new Map(snapshot.people.map((item) => [item.id, item]));
+    const organizationsById = new Map(snapshot.organizations.map((item) => [item.id, item]));
+    const intentsById = new Map(snapshot.intents.map((item) => [item.id, item]));
     const latestEvaluations = new Map<string, Evaluation>();
 
-    for (const evaluation of evaluations.data.sort((a, b) => a.evaluatedAt.localeCompare(b.evaluatedAt))) {
+    for (const evaluation of [...snapshot.evaluations].sort((a, b) => a.evaluatedAt.localeCompare(b.evaluatedAt))) {
       latestEvaluations.set(evaluation.planId, evaluation);
     }
 
-    const planCards = plans.data.map((plan) => {
-      const planRequirements = requirements.data.filter((item) => item.planId === plan.id);
-      const planEvidence = evidence.data.filter((item) => item.planId === plan.id);
-      const planWork = work.data.filter((item) => item.planId === plan.id);
-      const planDecision = decisions.data.find((item) => item.planId === plan.id);
+    const planCards = snapshot.plans.map((plan) => {
+      const planRequirements = snapshot.requirements.filter((item) => item.planId === plan.id);
+      const planEvidence = snapshot.evidence.filter((item) => item.planId === plan.id);
+      const planWork = snapshot.work.filter((item) => item.planId === plan.id);
+      const planDecision = snapshot.decisions.find((item) => item.planId === plan.id);
       const planIntent = intentsById.get(plan.intentId);
-      const planInteractions = interactions.data.filter((item) => item.situationId === plan.situationId);
-      const planAttentions = attentions.data.filter((item) => item.situationId === plan.situationId);
-      const latestAttention = planAttentions.sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))[0];
+      const planInteractions = snapshot.interactions.filter((item) => item.situationId === plan.situationId);
+      const planAttentions = snapshot.attentions.filter((item) => item.situationId === plan.situationId);
+      const latestAttention = [...planAttentions].sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))[0];
       const relatedPerson = latestAttention?.personId ? peopleById.get(latestAttention.personId) : undefined;
       const relatedOrganization = latestAttention?.organizationId ? organizationsById.get(latestAttention.organizationId) : relatedPerson ? organizationsById.get(relatedPerson.organizationId) : undefined;
       const latestEvaluation = latestEvaluations.get(plan.id);
-      const relevantOutcomes = outcomes.data.filter((item) => item.situationId === plan.situationId);
       const totalPremium = planEvidence.reduce((sum, item) => sum + (typeof item.value.annualPremium === "number" ? item.value.annualPremium : 0), 0);
 
       return {
@@ -177,20 +244,19 @@ export function DecisionInbox() {
         relatedOrganization,
         latestEvaluation,
         totalPremium,
-        relevantOutcomes,
       };
     });
 
     return {
       readyDecisions: planCards.filter((card) => card.planDecision?.status === "ready"),
       activePlans: planCards.filter((card) => card.latestEvaluation?.status === "not_ready"),
-      resolvedDecisions: planCards.filter((card) => card.planDecision && ["made", "deferred"].includes(card.planDecision.status)),
-      recentEvents: [...events.data].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 12),
-      actions: [...actions.data].sort((a, b) => b.executedAt.localeCompare(a.executedAt)),
-      artifacts: new Map(artifacts.data.map((item) => [item.id, item])),
-      agents: new Map(agents.data.map((item) => [item.id, item])),
+      recentEvents: [...snapshot.events].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 12),
+      actions: [...snapshot.actions].sort((a, b) => b.executedAt.localeCompare(a.executedAt)),
+      artifacts: new Map(snapshot.artifacts.map((item) => [item.id, item])),
+      agents: new Map(snapshot.agents.map((item) => [item.id, item])),
+      outcomes: snapshot.outcomes,
     };
-  }, [actions.data, agents.data, artifacts.data, attentions.data, decisions.data, evidence.data, evaluations.data, interactions.data, intents.data, organizations.data, outcomes.data, people.data, plans.data, requirements.data, work.data, events.data]);
+  }, [snapshot]);
 
   async function postJson(url: string, body: Record<string, unknown>, busyId: string, successMessage: string) {
     setBusyKey(busyId);
@@ -221,7 +287,7 @@ export function DecisionInbox() {
   }
 
   if (error) {
-    return <div className="rounded-3xl border border-rose-200 bg-rose-50 p-8 text-sm text-rose-700">{error.message}</div>;
+    return <div className="rounded-3xl border border-rose-200 bg-rose-50 p-8 text-sm text-rose-700">{error}</div>;
   }
 
   return (
@@ -234,18 +300,7 @@ export function DecisionInbox() {
             This Next.js showcase uses FeltDB’s durable Node file runtime on the server and a FeltDB client in the browser. The engine stores the full lifecycle — attention, context, intent, plan, work, evidence, evaluation, decision, action, and outcome — and only surfaces situations whose evidence is actually decision-ready.
           </p>
           <div className="flex flex-wrap gap-2 text-xs text-slate-600">
-            {[
-              "ATTENTION",
-              "CONTEXT",
-              "INTENT",
-              "PLAN",
-              "WORK",
-              "EVIDENCE",
-              "EVALUATION",
-              "DECISION",
-              "ACTION",
-              "OUTCOME",
-            ].map((step) => (
+            {["ATTENTION", "CONTEXT", "INTENT", "PLAN", "WORK", "EVIDENCE", "EVALUATION", "DECISION", "ACTION", "OUTCOME"].map((step) => (
               <span key={step} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 font-medium">
                 {step}
               </span>
@@ -255,17 +310,7 @@ export function DecisionInbox() {
         <div className="rounded-2xl bg-slate-950 p-6 text-sm text-slate-100">
           <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Architectural invariant</div>
           <div className="mt-4 space-y-2 font-mono text-xs">
-            {[
-              "HUMAN",
-              "DECISION",
-              "EVALUATION",
-              "EVIDENCE",
-              "WORK",
-              "PLAN",
-              "INTENT",
-              "CONTEXT",
-              "ATTENTION",
-            ].map((line) => (
+            {["HUMAN", "DECISION", "EVALUATION", "EVIDENCE", "WORK", "PLAN", "INTENT", "CONTEXT", "ATTENTION"].map((line) => (
               <div key={line}>{line}</div>
             ))}
           </div>
@@ -273,9 +318,7 @@ export function DecisionInbox() {
         </div>
       </section>
 
-      {message ? (
-        <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">{message}</div>
-      ) : null}
+      {message ? <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">{message}</div> : null}
 
       <section className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
         <div className="mb-6 flex items-center justify-between gap-4">
@@ -381,9 +424,7 @@ export function DecisionInbox() {
             </article>
           ))}
 
-          {model.readyDecisions.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-300 p-6 text-sm text-slate-500">No situations are currently decision-ready.</div>
-          ) : null}
+          {model.readyDecisions.length === 0 ? <div className="rounded-2xl border border-dashed border-slate-300 p-6 text-sm text-slate-500">No situations are currently decision-ready.</div> : null}
         </div>
       </section>
 
@@ -474,7 +515,7 @@ export function DecisionInbox() {
               <div className="rounded-2xl border border-dashed border-slate-300 p-4">Make a decision above to produce an action and outcome.</div>
             ) : (
               model.actions.map((action) => {
-                const outcome = outcomes.data.find((item) => item.actionId === action.id);
+                const outcome = model.outcomes.find((item) => item.actionId === action.id);
                 return (
                   <div key={action.id} className="rounded-2xl border border-slate-200 p-4">
                     <div className="flex items-center justify-between gap-3">
