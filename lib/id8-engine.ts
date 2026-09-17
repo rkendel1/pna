@@ -934,8 +934,34 @@ export async function rebuildPlanState(db: StateFirstDB, planId: string, actor: 
       const existingWork = await workCollection.find({ requirementId: requirement.id });
       const activeWork = existingWork.find((item) => item.status !== "completed");
       if (!activeWork) {
+        const completedWork = [...existingWork]
+          .filter((item) => item.status === "completed")
+          .sort((left, right) => (right.completedAt ?? "").localeCompare(left.completedAt ?? ""))[0];
+
+        if (completedWork) {
+          const currentWork = (await workCollection.get(completedWork.id)) as Versioned<WorkItem> | null;
+          if (currentWork?.__version !== undefined) {
+            await workCollection.updateIfVersion(completedWork.id, currentWork.__version, {
+              status: "queued",
+              completedAt: undefined,
+              outputEvidenceIds: [],
+            });
+          }
+          await recordEvent(db, {
+            situationId: plan.situationId,
+            type: "work.created",
+            createdAt: new Date().toISOString(),
+            actor,
+            entityType: "work",
+            entityId: completedWork.id,
+            summary: `${completedWork.title} was reopened to satisfy missing evidence.`,
+            payload: { requirementId: requirement.id },
+          });
+          continue;
+        }
+
         const workItem: WorkItem = {
-          id: `work-${requirement.id}`,
+          id: `work-${requirement.id}-${Date.now()}`,
           planId,
           situationId: plan.situationId,
           requirementId: requirement.id,
