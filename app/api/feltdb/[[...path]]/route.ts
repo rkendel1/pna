@@ -79,7 +79,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const records = items.slice(0, limit);
     return json({
       records,
-      exhausted: records.length === items.length,
+      exhausted: items.length <= limit,
     });
   }
 

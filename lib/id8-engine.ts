@@ -1170,7 +1170,7 @@ export async function makeDecision(
   }
 
   if (decision.status === "made" || decision.status === "deferred") {
-    return decision;
+    throw new Error(`Decision ${decisionId} has already been acted on.`);
   }
 
   if (decision.status !== "ready") {
