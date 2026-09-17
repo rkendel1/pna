@@ -948,13 +948,17 @@ export async function rebuildPlanState(db: StateFirstDB, planId: string, actor: 
 
         if (completedWork) {
           const currentWork = (await workCollection.get(completedWork.id)) as Versioned<WorkItem> | null;
-          if (currentWork?.__version !== undefined) {
-            await workCollection.updateIfVersion(completedWork.id, currentWork.__version, {
-              status: "queued",
-              performerId: performerIdForPlan(plan),
-              completedAt: undefined,
-              outputEvidenceIds: [],
-            });
+          if (currentWork?.__version === undefined) {
+            throw new Error(`Work item ${completedWork.id} is missing version metadata.`);
+          }
+          const updateResult = await workCollection.updateIfVersion(completedWork.id, currentWork.__version, {
+            status: "queued",
+            performerId: performerIdForPlan(plan),
+            completedAt: undefined,
+            outputEvidenceIds: [],
+          });
+          if (!updateResult.updated) {
+            throw new Error(`Work item ${completedWork.id} changed before it could be reopened.`);
           }
           await recordEvent(db, {
             situationId: plan.situationId,
@@ -1057,24 +1061,28 @@ export async function rebuildPlanState(db: StateFirstDB, planId: string, actor: 
     }
   } else if (decision.status !== "made" && decision.status !== "deferred") {
     const current = (await decisionsCollection.get(decision.id)) as Versioned<Decision> | null;
-    if (current?.__version !== undefined) {
-      const previousStatus = current.status;
-      await decisionsCollection.updateIfVersion(decision.id, current.__version, {
-        status: nextDecisionStatus,
-        evaluationId: evaluation.id,
+    if (current?.__version === undefined) {
+      throw new Error(`Decision ${decision.id} is missing version metadata.`);
+    }
+    const previousStatus = current.status;
+    const updateResult = await decisionsCollection.updateIfVersion(decision.id, current.__version, {
+      status: nextDecisionStatus,
+      evaluationId: evaluation.id,
+    });
+    if (!updateResult.updated) {
+      throw new Error(`Decision ${decision.id} changed before it could be updated.`);
+    }
+    if (previousStatus !== "ready" && nextDecisionStatus === "ready") {
+      await recordEvent(db, {
+        situationId: plan.situationId,
+        type: "decision.ready",
+        createdAt: new Date().toISOString(),
+        actor,
+        entityType: "decision",
+        entityId: decision.id,
+        summary: `${decision.title} is ready for human judgment.`,
+        payload: { evaluationId: evaluation.id },
       });
-      if (previousStatus !== "ready" && nextDecisionStatus === "ready") {
-        await recordEvent(db, {
-          situationId: plan.situationId,
-          type: "decision.ready",
-          createdAt: new Date().toISOString(),
-          actor,
-          entityType: "decision",
-          entityId: decision.id,
-          summary: `${decision.title} is ready for human judgment.`,
-          payload: { evaluationId: evaluation.id },
-        });
-      }
     }
   }
 

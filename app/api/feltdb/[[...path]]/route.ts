@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { authorizeDemoMutation, authorizeSameOriginRequest } from "@/lib/demo-auth";
+import { authorizeDemoMutation, authorizeSameOriginRequest, ensureDemoSessionCookie } from "@/lib/demo-auth";
 import { getServerDb } from "@/lib/feltdb";
 
 type RouteContext = {
@@ -71,6 +71,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const authError = authorizeSameOriginRequest(request);
     if (authError) {
       return json({ error: authError }, { status: 403 });
+    }
+    if (!ensureDemoSessionCookie(request)) {
+      return json({ error: "An authorized demo session is required for query access." }, { status: 403 });
     }
     const body = (await request.json()) as QueryBody;
     if (!exposedCollections.has(body.collection)) {
