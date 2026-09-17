@@ -25,6 +25,10 @@ type Versioned<T> = T & { __version?: number };
 const insuranceActions = ["present_proposal", "request_changes", "defer"];
 const onboardingActions = ["activate", "request_information", "defer"];
 
+function performerIdForPlan(plan: Plan) {
+  return plan.domain === "Insurance" ? "agent-underwriting" : "agent-onboarding";
+}
+
 function timestamp(base: string, minutes: number) {
   return new Date(new Date(base).getTime() + minutes * 60_000).toISOString();
 }
@@ -943,6 +947,7 @@ export async function rebuildPlanState(db: StateFirstDB, planId: string, actor: 
           if (currentWork?.__version !== undefined) {
             await workCollection.updateIfVersion(completedWork.id, currentWork.__version, {
               status: "queued",
+              performerId: performerIdForPlan(plan),
               completedAt: undefined,
               outputEvidenceIds: [],
             });
@@ -969,7 +974,7 @@ export async function rebuildPlanState(db: StateFirstDB, planId: string, actor: 
           type: requirement.workType,
           title: requirement.workTitle,
           performerType: "agent",
-          performerId: "agent-onboarding",
+          performerId: performerIdForPlan(plan),
           status: "queued",
           outputEvidenceIds: [],
         };

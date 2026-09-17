@@ -11,7 +11,11 @@ export function authorizeDemoMutation(request: NextRequest) {
   const origin = request.headers.get("origin");
   const requestOrigin = new URL(request.url).origin;
 
-  if (origin && origin !== requestOrigin) {
+  if (!origin) {
+    return "A same-origin browser session is required for durable state changes.";
+  }
+
+  if (origin !== requestOrigin) {
     return "Cross-origin mutation requests are not allowed.";
   }
 

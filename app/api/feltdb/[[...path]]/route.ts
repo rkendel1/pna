@@ -52,9 +52,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const collection = db.collection<Record<string, unknown>>(body.collection);
     const filters = Object.fromEntries((body.where ?? []).map((condition) => [condition.field, condition.eq]));
     const items = await collection.find(filters);
+    const limit = body.limit ?? items.length;
+    const records = items.slice(0, limit);
     return json({
-      records: items.slice(0, body.limit ?? items.length),
-      exhausted: true,
+      records,
+      exhausted: records.length >= items.length,
     });
   }
 
@@ -101,10 +103,15 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
   if (path[0] === "collections" && path[1] && path[2]) {
     const collection = db.collection<Record<string, unknown>>(path[1]);
-    const body = (await request.json()) as Record<string, unknown>;
-    await collection.update(path[2], body);
-    const item = await collection.get(path[2]);
-    return json({ value: item });
+    const body = (await request.json()) as { expectedVersion?: number; value?: Record<string, unknown> };
+    if (body.expectedVersion === undefined || !body.value) {
+      return json({ error: "expectedVersion and value are required; use compare-and-set semantics." }, { status: 400 });
+    }
+    const result = await collection.updateIfVersion(path[2], body.expectedVersion, body.value);
+    if (!result.updated) {
+      return json({ code: "VERSION_CONFLICT", currentVersion: result.currentVersion }, { status: 409 });
+    }
+    return json({ value: result.item });
   }
 
   return json({ error: "Unsupported PATCH endpoint" }, { status: 404 });
