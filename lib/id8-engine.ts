@@ -923,11 +923,15 @@ export async function rebuildPlanState(db: StateFirstDB, planId: string, actor: 
 
     if (linkedEvidenceIds.length !== requirement.evidenceIds.length || requirement.satisfied !== satisfied) {
       const current = (await requirementsCollection.get(requirement.id)) as Versioned<Requirement> | null;
-      if (current?.__version !== undefined) {
-        await requirementsCollection.updateIfVersion(requirement.id, current.__version, {
-          evidenceIds: linkedEvidenceIds,
-          satisfied,
-        });
+      if (current?.__version === undefined) {
+       throw new Error(`Requirement ${requirement.id} is missing version metadata.`);
+      }
+      const updateResult = await requirementsCollection.updateIfVersion(requirement.id, current.__version, {
+       evidenceIds: linkedEvidenceIds,
+       satisfied,
+      });
+      if (!updateResult.updated) {
+       throw new Error(`Requirement ${requirement.id} changed before it could be updated.`);
       }
     }
 
@@ -1183,16 +1187,17 @@ export async function makeDecision(
   }
 
   const madeAt = new Date().toISOString();
-  if (decision.__version !== undefined) {
-    const nextStatus = actionType === "defer" ? "deferred" : "made";
-    const updateResult = await decisionsCollection.updateIfVersion(decisionId, decision.__version, {
-      status: nextStatus,
-      madeAt,
-      lastActionType: actionType,
-    });
-    if (!updateResult.updated) {
-      throw new Error(`Decision ${decisionId} changed before it could be acted on.`);
-    }
+  if (decision.__version === undefined) {
+    throw new Error(`Decision ${decisionId} is missing version metadata.`);
+  }
+  const nextStatus = actionType === "defer" ? "deferred" : "made";
+  const updateResult = await decisionsCollection.updateIfVersion(decisionId, decision.__version, {
+    status: nextStatus,
+    madeAt,
+    lastActionType: actionType,
+  });
+  if (!updateResult.updated) {
+    throw new Error(`Decision ${decisionId} changed before it could be acted on.`);
   }
 
   const action: ActionRecord = {

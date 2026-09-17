@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { authorizeDemoMutation } from "@/lib/demo-auth";
+import { authorizeDemoMutation, authorizeSameOriginRequest } from "@/lib/demo-auth";
 import { getServerDb } from "@/lib/feltdb";
 
 type RouteContext = {
@@ -68,6 +68,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
   const db = await getServerDb();
 
   if (path[0] === "query") {
+    const authError = authorizeSameOriginRequest(request);
+    if (authError) {
+      return json({ error: authError }, { status: 403 });
+    }
     const body = (await request.json()) as QueryBody;
     if (!exposedCollections.has(body.collection)) {
       return json({ error: "Collection is not exposed by this demo API." }, { status: 404 });
