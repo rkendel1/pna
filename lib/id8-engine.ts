@@ -22,6 +22,8 @@ import type {
 
 const SEED_KEY = "id8-poc-v1";
 type Versioned<T> = T & { __version?: number };
+const insuranceActions = ["present_proposal", "request_changes", "defer"];
+const onboardingActions = ["activate", "request_information", "defer"];
 
 function timestamp(base: string, minutes: number) {
   return new Date(new Date(base).getTime() + minutes * 60_000).toISOString();
@@ -993,7 +995,7 @@ export async function rebuildPlanState(db: StateFirstDB, planId: string, actor: 
       title: plan.domain === "Insurance" ? "Present insurance proposal" : "Activate customer",
       status: nextDecisionStatus,
       evaluationId: evaluation.id,
-      availableActions: plan.domain === "Insurance" ? ["Present Proposal", "Request Changes", "Defer"] : ["Activate", "Request Information", "Defer"],
+      availableActions: plan.domain === "Insurance" ? insuranceActions : onboardingActions,
     };
     await decisionsCollection.insert(newDecision, newDecision.id);
     if (nextDecisionStatus === "ready") {
@@ -1134,6 +1136,11 @@ export async function makeDecision(
     throw new Error("Decision is not yet ready");
   }
 
+  const supportedActions = decision.type === "activate_customer" ? onboardingActions : insuranceActions;
+  if (!supportedActions.includes(actionType)) {
+    throw new Error(`Unsupported action '${actionType}' for decision ${decisionId}`);
+  }
+
   const madeAt = new Date().toISOString();
   if (decision.__version !== undefined) {
     const nextStatus = actionType === "defer" ? "deferred" : "made";
@@ -1158,7 +1165,11 @@ export async function makeDecision(
           ? "Proposal sent to the prospect"
           : actionType === "request_changes"
             ? "Requested adjustments before presentation"
-            : "Deferred for later follow-up",
+            : actionType === "activate"
+              ? "Customer activated and kickoff triggered"
+              : actionType === "request_information"
+                ? "Requested missing activation context"
+                : "Deferred for later follow-up",
     },
   };
   await actionsCollection.insert(action, action.id);
@@ -1197,6 +1208,38 @@ export async function makeDecision(
       createdAttentionId,
     );
     summary = "Change request captured as new attention.";
+  } else if (actionType === "activate") {
+    createdAttentionId = `attention-${decision.situationId}-kickoff`;
+    await attentionsCollection.insert(
+      {
+        id: createdAttentionId,
+        situationId: decision.situationId,
+        type: "scheduled_event",
+        source: "activation_workflow",
+        occurredAt: madeAt,
+        subject: "Implementation kickoff scheduled after activation",
+        rawData: { status: "scheduled", nextStep: "handoff to onboarding team" },
+        status: "new",
+      },
+      createdAttentionId,
+    );
+    summary = "Customer activated and kickoff attention created.";
+  } else if (actionType === "request_information") {
+    createdAttentionId = `attention-${decision.situationId}-info-request`;
+    await attentionsCollection.insert(
+      {
+        id: createdAttentionId,
+        situationId: decision.situationId,
+        type: "customer_request",
+        source: "decision_inbox",
+        occurredAt: madeAt,
+        subject: "Additional activation information requested",
+        rawData: { reason: "Need more implementation detail before activation" },
+        status: "new",
+      },
+      createdAttentionId,
+    );
+    summary = "Additional activation information requested and captured as attention.";
   }
 
   const outcome: Outcome = {

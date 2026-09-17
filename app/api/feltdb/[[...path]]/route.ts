@@ -90,57 +90,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return json({ records, nextCursor, exhausted: !nextCursor });
   }
 
-  if (path[0] === "collections" && path[1] && !path[2]) {
-    const collection = db.collection<Record<string, unknown>>(path[1]);
-    const body = (await request.json()) as Record<string, unknown>;
-    const id = String(body.id ?? "");
-    if (!id) {
-      return json({ error: "Record must include id" }, { status: 400 });
-    }
-    await collection.insert(body, id);
-    return json({ id, value: body }, { status: 201 });
-  }
-
-  if (path[0] === "collections" && path[1] && path[2] && path[3] === "cas") {
-    const collection = db.collection<Record<string, unknown>>(path[1]);
-    const body = (await request.json()) as { expectedVersion?: number; value?: Record<string, unknown> };
-    if (body.expectedVersion === undefined || !body.value) {
-      return json({ error: "expectedVersion and value are required" }, { status: 400 });
-    }
-    const result = await collection.updateIfVersion(path[2], body.expectedVersion, body.value);
-    if (!result.updated) {
-      return json({ code: "VERSION_CONFLICT", currentVersion: result.currentVersion }, { status: 409 });
-    }
-    return json({ updated: true, currentVersion: result.item?.__version, item: result.item });
-  }
-
-  return json({ error: "Unsupported POST endpoint" }, { status: 404 });
+  return json({ error: "The generic FeltDB endpoint is read-only in this POC." }, { status: 403 });
 }
 
-export async function PATCH(request: NextRequest, context: RouteContext) {
-  const { path = [] } = await context.params;
-  const db = await getServerDb();
-
-  if (path[0] === "collections" && path[1] && path[2]) {
-    const collection = db.collection<Record<string, unknown>>(path[1]);
-    const body = (await request.json()) as Record<string, unknown>;
-    await collection.update(path[2], body);
-    const item = await collection.get(path[2]);
-    return json({ value: item });
-  }
-
-  return json({ error: "Unsupported PATCH endpoint" }, { status: 404 });
+export async function PATCH() {
+  return json({ error: "The generic FeltDB endpoint is read-only in this POC." }, { status: 403 });
 }
 
-export async function DELETE(_request: NextRequest, context: RouteContext) {
-  const { path = [] } = await context.params;
-  const db = await getServerDb();
-
-  if (path[0] === "collections" && path[1] && path[2]) {
-    const collection = db.collection<Record<string, unknown>>(path[1]);
-    await collection.delete(path[2]);
-    return new Response(null, { status: 204 });
-  }
-
-  return json({ error: "Unsupported DELETE endpoint" }, { status: 404 });
+export async function DELETE() {
+  return json({ error: "The generic FeltDB endpoint is read-only in this POC." }, { status: 403 });
 }

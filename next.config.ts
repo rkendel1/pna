@@ -1,7 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  agentRules: false,
+  env: {
+    FELTDB_TELEMETRY: "false",
+  },
 };
 
 export default nextConfig;

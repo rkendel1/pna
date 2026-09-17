@@ -26,6 +26,13 @@ const currency = new Intl.NumberFormat("en-US", {
   currency: "USD",
   maximumFractionDigits: 0,
 });
+const actionLabels: Record<string, string> = {
+  present_proposal: "Present Proposal",
+  request_changes: "Request Changes",
+  defer: "Defer",
+  activate: "Activate",
+  request_information: "Request Information",
+};
 
 type Snapshot = {
   people: Person[];
@@ -84,6 +91,26 @@ function FactPill({ label, value, status }: { label: string; value: string; stat
       <span className="font-semibold text-slate-900">{label}:</span> {value} <Badge tone={tone as "emerald" | "amber" | "slate"}>{status}</Badge>
     </div>
   );
+}
+
+function actionButtonClass(actionType: string) {
+  if (actionType === "present_proposal" || actionType === "activate") {
+    return "w-full rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50";
+  }
+
+  if (actionType === "defer") {
+    return "w-full rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900 disabled:opacity-50";
+  }
+
+  return "w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 disabled:opacity-50";
+}
+
+function actionSuccessMessage(actionType: string) {
+  if (actionType === "present_proposal") return "Proposal delivered; new attention created from the outcome.";
+  if (actionType === "request_changes") return "Change request captured as new attention.";
+  if (actionType === "activate") return "Customer activated; kickoff attention created from the outcome.";
+  if (actionType === "request_information") return "Information request captured as new attention.";
+  return "Decision deferred for follow-up.";
 }
 
 export function DecisionInbox() {
@@ -394,30 +421,28 @@ export function DecisionInbox() {
                   <div className="text-sm font-semibold text-slate-900">Available actions</div>
                   <p className="text-sm text-slate-600">{card.latestEvaluation?.rationale}</p>
                   <div className="space-y-2">
-                    <button
-                      type="button"
-                      onClick={() => postJson(`/api/decisions/${card.planDecision?.id}`, { actionType: "present_proposal" }, `decision:${card.planDecision?.id}:present`, "Proposal delivered; new attention created from the outcome.")}
-                      disabled={busyKey === `decision:${card.planDecision?.id}:present`}
-                      className="w-full rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
-                    >
-                      {busyKey === `decision:${card.planDecision?.id}:present` ? "Working…" : "Present Proposal"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => postJson(`/api/decisions/${card.planDecision?.id}`, { actionType: "request_changes" }, `decision:${card.planDecision?.id}:changes`, "Change request captured as new attention.")}
-                      disabled={busyKey === `decision:${card.planDecision?.id}:changes`}
-                      className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 disabled:opacity-50"
-                    >
-                      Request Changes
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => postJson(`/api/decisions/${card.planDecision?.id}`, { actionType: "defer" }, `decision:${card.planDecision?.id}:defer`, "Decision deferred for follow-up.")}
-                      disabled={busyKey === `decision:${card.planDecision?.id}:defer`}
-                      className="w-full rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900 disabled:opacity-50"
-                    >
-                      Defer
-                    </button>
+                    {card.planDecision?.availableActions.map((actionType) => {
+                      const actionKey = `decision:${card.planDecision?.id}:${actionType}`;
+                      const busy = busyKey === actionKey;
+                      return (
+                        <button
+                          key={actionType}
+                          type="button"
+                          onClick={() =>
+                            postJson(
+                              `/api/decisions/${card.planDecision?.id}`,
+                              { actionType },
+                              actionKey,
+                              actionSuccessMessage(actionType),
+                            )
+                          }
+                          disabled={busy}
+                          className={actionButtonClass(actionType)}
+                        >
+                          {busy ? "Working…" : actionLabels[actionType] ?? actionType}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
