@@ -16,6 +16,22 @@ function json(data: unknown, init?: ResponseInit) {
   return Response.json(data, init);
 }
 
+const exposedCollections = new Set([
+  "people",
+  "organizations",
+  "interactions",
+  "attentions",
+  "intents",
+  "plans",
+  "requirements",
+  "work",
+  "evidence",
+  "evaluations",
+  "decisions",
+  "artifacts",
+  "agents",
+]);
+
 export async function GET(_request: NextRequest, context: RouteContext) {
   const { path = [] } = await context.params;
   const db = await getServerDb();
@@ -26,6 +42,10 @@ export async function GET(_request: NextRequest, context: RouteContext) {
   }
 
   if (path[0] === "collections" && path[1]) {
+    if (!exposedCollections.has(path[1])) {
+      return json({ error: "Collection is not exposed by this demo API." }, { status: 404 });
+    }
+
     const collection = db.collection<Record<string, unknown>>(path[1]);
 
     if (path[2]) {
@@ -49,6 +69,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
   if (path[0] === "query") {
     const body = (await request.json()) as QueryBody;
+    if (!exposedCollections.has(body.collection)) {
+      return json({ error: "Collection is not exposed by this demo API." }, { status: 404 });
+    }
     const collection = db.collection<Record<string, unknown>>(body.collection);
     const filters = Object.fromEntries((body.where ?? []).map((condition) => [condition.field, condition.eq]));
     const items = await collection.find(filters);
@@ -56,7 +79,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const records = items.slice(0, limit);
     return json({
       records,
-      exhausted: records.length >= items.length,
+      exhausted: records.length === items.length,
     });
   }
 
@@ -66,6 +89,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
   }
 
   if (path[0] === "collections" && path[1] && !path[2]) {
+    if (!exposedCollections.has(path[1])) {
+      return json({ error: "Collection is not exposed by this demo API." }, { status: 404 });
+    }
     const collection = db.collection<Record<string, unknown>>(path[1]);
     const body = (await request.json()) as Record<string, unknown>;
     const id = String(body.id ?? "");
@@ -77,6 +103,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
   }
 
   if (path[0] === "collections" && path[1] && path[2] && path[3] === "cas") {
+    if (!exposedCollections.has(path[1])) {
+      return json({ error: "Collection is not exposed by this demo API." }, { status: 404 });
+    }
     const collection = db.collection<Record<string, unknown>>(path[1]);
     const body = (await request.json()) as { expectedVersion?: number; value?: Record<string, unknown> };
     if (body.expectedVersion === undefined || !body.value) {
@@ -102,6 +131,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   const db = await getServerDb();
 
   if (path[0] === "collections" && path[1] && path[2]) {
+    if (!exposedCollections.has(path[1])) {
+      return json({ error: "Collection is not exposed by this demo API." }, { status: 404 });
+    }
     const collection = db.collection<Record<string, unknown>>(path[1]);
     const body = (await request.json()) as { expectedVersion?: number; value?: Record<string, unknown> };
     if (body.expectedVersion === undefined || !body.value) {
@@ -127,6 +159,9 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
   const db = await getServerDb();
 
   if (path[0] === "collections" && path[1] && path[2]) {
+    if (!exposedCollections.has(path[1])) {
+      return json({ error: "Collection is not exposed by this demo API." }, { status: 404 });
+    }
     const collection = db.collection<Record<string, unknown>>(path[1]);
     await collection.delete(path[2]);
     return new Response(null, { status: 204 });

@@ -1185,11 +1185,14 @@ export async function makeDecision(
   const madeAt = new Date().toISOString();
   if (decision.__version !== undefined) {
     const nextStatus = actionType === "defer" ? "deferred" : "made";
-    await decisionsCollection.updateIfVersion(decisionId, decision.__version, {
+    const updateResult = await decisionsCollection.updateIfVersion(decisionId, decision.__version, {
       status: nextStatus,
       madeAt,
       lastActionType: actionType,
     });
+    if (!updateResult.updated) {
+      throw new Error(`Decision ${decisionId} changed before it could be acted on.`);
+    }
   }
 
   const action: ActionRecord = {

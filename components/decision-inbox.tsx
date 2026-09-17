@@ -115,21 +115,23 @@ function actionSuccessMessage(actionType: string) {
   return "Decision deferred for follow-up.";
 }
 
-export function DecisionInbox() {
+export function DecisionInbox({ initialOperatorEnabled }: { initialOperatorEnabled: boolean }) {
   const [refreshToken, setRefreshToken] = useState(0);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [operatorEnabled, setOperatorEnabled] = useState(initialOperatorEnabled);
   const [snapshot, setSnapshot] = useState<Snapshot>(emptySnapshot);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const db = useMemo(() => {
-    const refreshGeneration = refreshToken;
-    return createFeltDB({
-      namespace: "id8-poc-client",
-      server: { url: "/api/feltdb", requestTimeoutMs: 30_000 + refreshGeneration * 0 },
-    });
-  }, [refreshToken]);
+  const db = useMemo(
+    () =>
+      createFeltDB({
+        namespace: `id8-poc-client-${refreshToken}`,
+        server: { url: "/api/feltdb", requestTimeoutMs: 30_000 },
+      }),
+    [refreshToken],
+  );
 
   const collections = useMemo(
     () => ({
@@ -307,6 +309,26 @@ export function DecisionInbox() {
     }
   }
 
+  async function enableOperatorMode() {
+    setBusyKey("operator-mode");
+    setMessage(null);
+
+    try {
+      const response = await fetch("/api/operator-session", { method: "POST" });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error ?? `Request failed with ${response.status}`);
+      }
+
+      setOperatorEnabled(true);
+      setMessage("Operator mode enabled for this browser session.");
+    } catch (requestError) {
+      setMessage(requestError instanceof Error ? requestError.message : String(requestError));
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
   if (loading) {
     return <div className="rounded-3xl border border-slate-200 bg-white p-8 text-sm text-slate-600">Loading durable decision state…</div>;
   }
@@ -344,6 +366,20 @@ export function DecisionInbox() {
       </section>
 
       {message ? <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">{message}</div> : null}
+
+      {!operatorEnabled ? (
+        <div className="flex items-center justify-between gap-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <span>Enable operator mode to run the demo mutations that advance plans or execute decisions.</span>
+          <button
+            type="button"
+            onClick={enableOperatorMode}
+            disabled={busyKey === "operator-mode"}
+            className="rounded-xl bg-amber-900 px-3 py-2 font-semibold text-white disabled:opacity-50"
+          >
+            {busyKey === "operator-mode" ? "Enabling…" : "Enable operator mode"}
+          </button>
+        </div>
+      ) : null}
 
       <section className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
         <div className="mb-6 flex items-center justify-between gap-4">
@@ -434,7 +470,7 @@ export function DecisionInbox() {
                               actionSuccessMessage(actionType),
                             )
                           }
-                          disabled={busy}
+                          disabled={!operatorEnabled || busy}
                           className={actionButtonClass(actionType)}
                         >
                           {busy ? "Working…" : actionLabels[actionType] ?? actionType}
@@ -475,7 +511,7 @@ export function DecisionInbox() {
                 <button
                   type="button"
                   onClick={() => postJson(`/api/plans/${card.plan.id}/fulfill`, {}, `plan:${card.plan.id}:fulfill`, "Missing evidence collected; evaluation rebuilt from durable state.")}
-                  disabled={busyKey === `plan:${card.plan.id}:fulfill`}
+                  disabled={!operatorEnabled || busyKey === `plan:${card.plan.id}:fulfill`}
                   className="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
                 >
                   {busyKey === `plan:${card.plan.id}:fulfill` ? "Collecting…" : "Simulate Evidence Arrival"}
