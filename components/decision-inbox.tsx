@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { createFeltDB } from "@feltdb/core";
+import { createFeltDB, getTelemetryClient } from "@feltdb/core";
 import type {
   ActionRecord,
   AgentRecord,
@@ -34,6 +34,8 @@ const actionLabels: Record<string, string> = {
   request_information: "Request Information",
 };
 
+getTelemetryClient().disable();
+
 type Snapshot = {
   people: Person[];
   organizations: Organization[];
@@ -46,10 +48,10 @@ type Snapshot = {
   evidence: Evidence[];
   evaluations: Evaluation[];
   decisions: Decision[];
-  outcomes: Outcome[];
-  actions: ActionRecord[];
   artifacts: Artifact[];
   agents: AgentRecord[];
+  outcomes: Outcome[];
+  actions: ActionRecord[];
   events: DomainEvent[];
 };
 
@@ -65,10 +67,10 @@ const emptySnapshot: Snapshot = {
   evidence: [],
   evaluations: [],
   decisions: [],
-  outcomes: [],
-  actions: [],
   artifacts: [],
   agents: [],
+  outcomes: [],
+  actions: [],
   events: [],
 };
 
@@ -142,11 +144,8 @@ export function DecisionInbox() {
       evidence: db.collection<Evidence>("evidence"),
       evaluations: db.collection<Evaluation>("evaluations"),
       decisions: db.collection<Decision>("decisions"),
-      outcomes: db.collection<Outcome>("outcomes"),
-      actions: db.collection<ActionRecord>("actions"),
       artifacts: db.collection<Artifact>("artifacts"),
       agents: db.collection<AgentRecord>("agents"),
-      events: db.collection<DomainEvent>("events"),
     }),
     [db],
   );
@@ -171,11 +170,8 @@ export function DecisionInbox() {
           evidence,
           evaluations,
           decisions,
-          outcomes,
-          actions,
           artifacts,
           agents,
-          events,
         ] = await Promise.all([
           collections.people.all(),
           collections.organizations.all(),
@@ -188,12 +184,14 @@ export function DecisionInbox() {
           collections.evidence.all(),
           collections.evaluations.all(),
           collections.decisions.all(),
-          collections.outcomes.all(),
-          collections.actions.all(),
           collections.artifacts.all(),
           collections.agents.all(),
-          collections.events.all(),
         ]);
+        const activityResponse = await fetch("/api/dashboard");
+        if (!activityResponse.ok) {
+          throw new Error(`Dashboard request failed with ${activityResponse.status}`);
+        }
+        const activity = (await activityResponse.json()) as Pick<Snapshot, "actions" | "outcomes" | "events">;
 
         if (!active) {
           return;
@@ -211,11 +209,11 @@ export function DecisionInbox() {
           evidence,
           evaluations,
           decisions,
-          outcomes,
-          actions,
           artifacts,
           agents,
-          events,
+          actions: activity.actions,
+          outcomes: activity.outcomes,
+          events: activity.events,
         });
       } catch (loadError) {
         if (active) {
