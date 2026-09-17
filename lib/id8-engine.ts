@@ -74,6 +74,16 @@ export async function ensureSeedData(db: StateFirstDB) {
   const existing = await seed.get(SEED_KEY);
 
   if (existing) {
+    const plans = await db.collection<Plan>("plans").all();
+    const evaluationsCount = await db.collection<Evaluation>("evaluations").count();
+    const decisionsCount = await db.collection<Decision>("decisions").count();
+
+    if (evaluationsCount === 0 || decisionsCount === 0) {
+      for (const plan of plans) {
+        await rebuildPlanState(db, plan.id, "system:derived-state-rebuild");
+      }
+    }
+
     return;
   }
 
@@ -1177,7 +1187,7 @@ export async function makeDecision(
   let createdAttentionId: string | undefined;
   let summary = "Decision recorded.";
   if (actionType === "present_proposal") {
-    createdAttentionId = `attention-${decision.situationId}-follow-up`;
+    createdAttentionId = `attention-${action.id}-follow-up`;
     await attentionsCollection.insert(
       {
         id: createdAttentionId,
@@ -1193,7 +1203,7 @@ export async function makeDecision(
     );
     summary = "Proposal delivered and new follow-up attention created.";
   } else if (actionType === "request_changes") {
-    createdAttentionId = `attention-${decision.situationId}-changes`;
+    createdAttentionId = `attention-${action.id}-changes`;
     await attentionsCollection.insert(
       {
         id: createdAttentionId,
@@ -1209,7 +1219,7 @@ export async function makeDecision(
     );
     summary = "Change request captured as new attention.";
   } else if (actionType === "activate") {
-    createdAttentionId = `attention-${decision.situationId}-kickoff`;
+    createdAttentionId = `attention-${action.id}-kickoff`;
     await attentionsCollection.insert(
       {
         id: createdAttentionId,
@@ -1225,7 +1235,7 @@ export async function makeDecision(
     );
     summary = "Customer activated and kickoff attention created.";
   } else if (actionType === "request_information") {
-    createdAttentionId = `attention-${decision.situationId}-info-request`;
+    createdAttentionId = `attention-${action.id}-info-request`;
     await attentionsCollection.insert(
       {
         id: createdAttentionId,

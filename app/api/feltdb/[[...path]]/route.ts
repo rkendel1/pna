@@ -14,7 +14,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
   const db = await getServerDb();
 
   if (path[0] === "revision") {
-    const sync = db.sync();
+    const sync = await db.sync();
     return json({ revision: sync.sequence, scope: sync.instance_id });
   }
 

@@ -3,8 +3,9 @@ import { demoSessionCookie } from "@/lib/demo-auth";
 
 export function middleware(request: NextRequest) {
   const response = NextResponse.next();
+  const current = request.cookies.get(demoSessionCookie.name)?.value;
 
-  if (!request.cookies.get(demoSessionCookie.name)) {
+  if (current !== demoSessionCookie.value) {
     response.cookies.set(demoSessionCookie.name, demoSessionCookie.value, {
       httpOnly: true,
       sameSite: "lax",
